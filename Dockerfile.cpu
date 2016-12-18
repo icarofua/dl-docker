@@ -1,12 +1,10 @@
 FROM ubuntu:14.04
 
-MAINTAINER Sai Soundararaj <saip@outlook.com>
+MAINTAINER Icaro Olivera de Oliveira <icarofua@gmail.com>
 
 ARG THEANO_VERSION=rel-0.8.2
-ARG TENSORFLOW_VERSION=0.8.0
+ARG TENSORFLOW_VERSION=0.11.0
 ARG TENSORFLOW_ARCH=cpu
-ARG KERAS_VERSION=1.0.3
-ARG LASAGNE_VERSION=v0.1
 ARG TORCH_VERSION=latest
 ARG CAFFE_VERSION=master
 
@@ -72,8 +70,7 @@ RUN apt-get update && apt-get install -y \
 		python-sympy \
 		&& \
 	apt-get clean && \
-	apt-get autoremove && \
-	rm -rf /var/lib/apt/lists/*
+	apt-get autoremove
 
 # Install other useful Python packages using pip
 RUN pip --no-cache-dir install --upgrade ipython && \
@@ -111,13 +108,12 @@ RUN apt-get update && apt-get install -y \
 		protobuf-compiler \
 		&& \
 	apt-get clean && \
-	apt-get autoremove && \
-	rm -rf /var/lib/apt/lists/*
+	apt-get autoremove
 
-# Install Caffe 
+# Install Caffe
 RUN git clone -b ${CAFFE_VERSION} --depth 1 https://github.com/BVLC/caffe.git /root/caffe && \
 	cd /root/caffe && \
-	cat python/requirements.txt | xargs -n1 pip install && \
+	cat python/requirements.txt | xargs -n1 pip install --upgrade && \
 	mkdir build && cd build && \
 	cmake -DCPU_ONLY=1 -DBLAS=Open .. && \
 	make -j"$(nproc)" all && \
@@ -144,11 +140,11 @@ RUN pip --no-cache-dir install git+git://github.com/Theano/Theano.git@${THEANO_V
 
 
 # Install Keras
-RUN pip --no-cache-dir install git+git://github.com/fchollet/keras.git@${KERAS_VERSION}
+RUN pip --no-cache-dir install git+git://github.com/fchollet/keras.git
 
 
 # Install Lasagne
-RUN pip --no-cache-dir install git+git://github.com/Lasagne/Lasagne.git@${LASAGNE_VERSION}
+RUN pip --no-cache-dir install git+git://github.com/Lasagne/Lasagne.git
 
 
 # Install Torch
@@ -172,6 +168,57 @@ RUN luarocks install nn && \
 	cd iTorch && \
 	luarocks make
 
+# Install opencv git version
+RUN apt-get update && apt-get install -y --force-yes build-essential cmake git libgtk2.0-dev pkg-config libavcodec-dev libavformat-dev libswscale-dev \
+	                    libtbb2 libtbb-dev libjpeg-dev libpng-dev libtiff-dev libjasper-dev libdc1394-22-dev libv4l-dev libatlas-base-dev gfortran \
+	                    libxine-dev libgstreamer0.10-dev libgstreamer-plugins-base0.10-dev libv4l-dev libtbb-dev libmp3lame-dev \
+	                    libopencore-amrnb-dev libopencore-amrwb-dev libtheora-dev libvorbis-dev libxvidcore-dev x264 v4l-utils unzip \
+	                    libtesseract-dev python-dev python-tk python3-dev python3-numpy && \
+			pip install --upgrade numpy && \
+	    apt-get clean
+
+RUN cd /root && git clone https://github.com/Itseez/opencv_contrib.git
+RUN cd /root && git clone https://github.com/Itseez/opencv.git
+RUN ENV OPENCV_HOME=/root/opencv
+RUN ENV OPENCV_CONTRIB_HOME=/root/opencv_contrib
+RUN cd $OPENCV_HOME && mkdir release && cd release && \
+	          cmake -D CMAKE_BUILD_TYPE=Release \
+	            -D CMAKE_INSTALL_PREFIX=/usr \
+	            -D PYTHON_EXECUTABLE=/usr/bin/python \
+	            -D CMAKE_SKIP_RPATH=ON \
+	            -D BUILD_TESTS=OFF \
+	            -D ENABLE_SSE=ON \
+	            -D ENABLE_SSE2=ON \
+	            -D ENABLE_SSE3=ON \
+	            -D ENABLE_SSSE3=ON \
+	            -D ENABLE_SSE41=ON \
+	            -D ENABLE_SSE42=ON \
+	            -D BUILD_EXAMPLES=OFF \
+	            -D INSTALL_C_EXAMPLES=OFF \
+	            -D INSTALL_PYTHON_EXAMPLES=OFF \
+	            -D WITH_XINE=OFF \
+	            -D WITH_QT=OFF \
+	            -D WITH_QT_OPENGL=OFF \
+	            -D WITH_UNICAP=OFF \
+	            -D WITH_PVAPI=OFF \
+	            -D WITH_OPENNI=ON \
+	            -D WITH_TBB=OFF \
+	            -D WITH_IPP=OFF \
+	            -D WITH_CUDA=OFF \
+		          -D OPENCV_EXTRA_MODULES_PATH=/root/opencv_contrib/modules \
+	            -D USE_FAST_MATH=ON ..
+
+RUN cd $OPENCV_HOME/release && make -j $(nproc) && make install
+
+#Install digits 4.0
+RUN apt-get update && apt-get install -y --no-install-recommends git graphviz gunicorn \
+  python-dev python-flask python-flaskext.wtf python-gevent \
+	python-pil python-protobuf
+
+ENV DIGITS_HOME=/root/DIGITS
+RUN cd /root && git clone https://github.com/NVIDIA/DIGITS.git
+RUN pip install --upgrade  -r $DIGITS_HOME/requirements.txt
+RUN echo "sh $DIGITS_HOME/digits_devserver" > /root/run_digits.sh
 
 # Set up notebook config
 COPY jupyter_notebook_config.py /root/.jupyter/
@@ -179,8 +226,8 @@ COPY jupyter_notebook_config.py /root/.jupyter/
 # Jupyter has issues with being run directly: https://github.com/ipython/ipython/issues/7062
 COPY run_jupyter.sh /root/
 
-# Expose Ports for TensorBoard (6006), Ipython (8888)
-EXPOSE 6006 8888
+# Expose Ports for TensorBoard (6006), Ipython (8888), Digits (5000)
+EXPOSE 6006 8888 5000
 
 WORKDIR "/root"
-CMD ["/bin/bash"]
+CMD /bin/sh /root/digits/digits_devserver & /bin/bash
